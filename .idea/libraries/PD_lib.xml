@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="PD_lib">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/../PD_Lib/Jar/PD_lib.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

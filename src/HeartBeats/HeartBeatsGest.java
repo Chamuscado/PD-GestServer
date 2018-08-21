@@ -1,7 +1,9 @@
 package HeartBeats;
 
 import java.io.Serializable;
+import java.rmi.ConnectException;
 import java.rmi.Naming;
+import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
@@ -11,32 +13,76 @@ import java.rmi.server.ServerNotActiveException;
 import java.rmi.server.UnicastRemoteObject;
 
 public class HeartBeatsGest extends UnicastRemoteObject implements IHeartBeats, Serializable {
+    private String dataBaseIp;
+    private static Registry registry = null;
+    private static HeartBeatsGest server = null;
+    private static String registration = null;
+    private static String serviceName = null;
 
+    static public void startHeartBeatsGest(String regist, String serviceStr, String dataBaseIp) {
 
-    static public void startHeartBeatsGest(String registry, String serviceStr) {
         try {
-            LocateRegistry.createRegistry(Registry.REGISTRY_PORT);
-            HeartBeatsGest server = new HeartBeatsGest();
-            String registration = "rmi://" + registry + "/" + serviceStr;
+            try {
+                registry = LocateRegistry.createRegistry(Registry.REGISTRY_PORT);
+
+            } catch (ConnectException ignore) {
+                try {
+                    registry = LocateRegistry.getRegistry(Registry.REGISTRY_PORT);
+                } catch (RemoteException e) {
+                    System.err.println("Remote Error (" + serviceStr + ") - " + e);
+                }
+            }
+
+
+            server = new HeartBeatsGest(dataBaseIp);
+            registration = "rmi://" + regist + "/" + serviceStr;
+            serviceName = serviceStr;
             Naming.rebind(registration, server);
+
         } catch (RemoteException e) {
-            System.err.println("Remote Error - " + e);
+            System.err.println("Remote Error (" + serviceStr + ") - " + e);
+            registry = null;
+            server = null;
+            registration = null;
         } catch (Exception e) {
-            System.err.println("Error - " + e);
+            System.err.println("Error (" + serviceStr + ") - " + e);
+            registry = null;
+            server = null;
+            registration = null;
         }
     }
 
 
-    protected HeartBeatsGest() throws RemoteException {
+    protected HeartBeatsGest(String dataBaseIp) throws RemoteException {
+        this.dataBaseIp = dataBaseIp;
     }
 
-    protected HeartBeatsGest(int port) throws RemoteException {
+    protected HeartBeatsGest(int port, String dataBaseIp) throws RemoteException {
         super(port);
+        this.dataBaseIp = dataBaseIp;
     }
 
-    protected HeartBeatsGest(int port, RMIClientSocketFactory csf, RMIServerSocketFactory ssf) throws RemoteException {
+    protected HeartBeatsGest(int port, RMIClientSocketFactory csf, RMIServerSocketFactory ssf, String dataBaseIp) throws RemoteException {
         super(port, csf, ssf);
+        this.dataBaseIp = dataBaseIp;
     }
+
+    public static void stop() {
+        if (registry == null) {
+            System.out.println("Nenhum serviço iniciado");
+            return;
+        }
+        try {
+            registry.unbind(serviceName);
+            UnicastRemoteObject.unexportObject(server, true);
+
+        } catch (RemoteException | NotBoundException e) {
+            System.out.println(e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+
     @Override
     public String heartBeat() throws RemoteException {
         try {
@@ -44,7 +90,7 @@ public class HeartBeatsGest extends UnicastRemoteObject implements IHeartBeats, 
         } catch (ServerNotActiveException e) {
             e.printStackTrace();
         }
-        return "123.456.789.012";
+        return dataBaseIp;
     }
 }
 
