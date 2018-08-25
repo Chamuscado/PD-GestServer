@@ -1,11 +1,10 @@
 package GestServerRmi;
 
 import DataBaseIO.DataBaseIO;
-import DataBaseIO.Elements.Player;
+import DataBaseIO.Elements.PairDatabase;
+import DataBaseIO.Elements.PlayerDatabase;
 import DataBaseIO.Exceptions.*;
-import Elements.Message;
-import Elements.User;
-import Elements.ValidationUser;
+import Elements.*;
 import Exceptions.AccessDeniedException;
 import Exceptions.UserAlreadyLoggedException;
 import Interfaces.IClientRmi;
@@ -21,7 +20,9 @@ import java.rmi.server.RMIClientSocketFactory;
 import java.rmi.server.RMIServerSocketFactory;
 import java.rmi.server.ServerNotActiveException;
 import java.rmi.server.UnicastRemoteObject;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 
 public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi, Serializable {
 
@@ -94,7 +95,7 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
     public boolean registUser(String name, String username, String password) throws RemoteException {
         System.out.println("A registar o user " + name + "registUser ");
         try {
-            return dataBase.addPlayer(new Player(name, username, password));
+            return dataBase.addPlayer(new PlayerDatabase(name, username, password));
         } catch (InvalidUserException | UseAlreadExitsException e) {
             System.out.println(e.getMessage());
             return false;
@@ -108,12 +109,19 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
             if (dataBase.getPlayer(username).isLogado())
                 throw new UserAlreadyLoggedException();
 
-            if (dataBase.login(new Player(username, password, getClientHost(), 0))) {
+            if (dataBase.login(new PlayerDatabase(username, password, getClientHost(), 0))) {
                 synchronized (userList) {
                     userList.put(username, rmiInterface);
                 }
             }
             refreshClientLoginList();
+            new Thread(() -> {
+                try {
+                    rmiInterface.refreshStatus();
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            }).start();
             return true;
         } catch (UserNotFoundException | WrongPassWordException | ServerNotActiveException e) {
             System.out.println(e.getMessage());
@@ -123,7 +131,7 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
 
 
     @Override
-    public void logOut(String username, IClientRmi rmiInterface) throws RemoteException {
+    public void logOut(String username, IClientRmi rmiInterface, ValidationUser validation) throws RemoteException {
         System.out.println("TryLogout: " + username);
         if (rmiInterface == null || username == null || username.isEmpty())
             return;
@@ -133,9 +141,8 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
         }
         if (clientRmi == null)
             return;
-        if (rmiInterface.getCode() == clientRmi.getCode()) {
-            dataBase.logout(username);
-            refreshClientLoginList();
+        if (isValidUser(validation)) {
+            logoutUser(username);
         }
     }
 
@@ -143,46 +150,138 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
     public List<User> getLoginUsers(ValidationUser validation) throws RemoteException, AccessDeniedException {
         if (!isValidUser(validation))
             throw new AccessDeniedException();
-        List<Player> list = dataBase.getPlayersLogados();
+        List<PlayerDatabase> list = dataBase.getPlayersLogados();
         List<User> userList = new ArrayList<>(list.size());
-        for (Player player : list) {
-            if (validation.getUser().compareTo(player.getName()) != 0)
-                userList.add(new User(player.getName(), player.getUser(), ""));
+        for (PlayerDatabase player : list) {
+            if (validation.getUsername().compareTo(player.getName()) != 0)
+                userList.add(new User(player.getName(), player.getUser(), "", player.getIdPar() != PairDatabase.INVALIDID));
         }
-
         return userList;
     }
 
     @Override
-    public boolean createPair(String user0, String user1, ValidationUser validation) throws RemoteException, AccessDeniedException {       // TODO -> têm de pedir a outro par
-        if (true)//TODO -> CheckLogin
-            throw new AccessDeniedException();
-        try {
-            boolean resp = dataBase.createpair(user0, user1);
-            dataBase.setPairAtual(user0, user1);
-            return resp;
-        } catch (UserNotFoundException | InvalidPairException e) {
-            System.out.println(e.getMessage());
-            return false;
-        }
-    }
-
-    @Override
-    public boolean sendMensage(Message message, ValidationUser validation) throws RemoteException {
+    public boolean sendMensage(Message message, ValidationUser validation) throws RemoteException, AccessDeniedException {
         IClientRmi destIRmi = userList.get(message.getDest());
         if (!isValidUser(validation) || destIRmi == null)
-            return false;
+            throw new AccessDeniedException();
         destIRmi.sendMensage(message);
         return true;
     }
 
     @Override
-    public void SendPairInvite(String s, ValidationUser validationUser) throws RemoteException {
+    public void sendPairInvite(String dest, ValidationUser validationUser) throws RemoteException, AccessDeniedException {
+        IClientRmi destIRmi = userList.get(dest);
+        if (!isValidUser(validationUser) || destIRmi == null)
+            throw new AccessDeniedException();
+        try {
+            PlayerDatabase player = dataBase.getPlayer(validationUser.getUsername());
+            destIRmi.recivePairInvite(new User(player.getName(), player.getUser()));
+        } catch (UserNotFoundException e) {
+            System.out.println("<SendPairInvite> " + e.getMessage());
+        }
+    }
+
+    @Override
+    public void answerPairInvite(User inviter, ValidationUser validationUser, boolean answer) throws RemoteException, AccessDeniedException {
+        IClientRmi destIRmi = userList.get(inviter.username);
+        if (!isValidUser(validationUser) || destIRmi == null)
+            throw new AccessDeniedException();
+        IClientRmi sourceIRmi = userList.get(validationUser.getUsername());
+        if (sourceIRmi == null || inviter.username.compareTo(validationUser.getUsername()) == 0)
+            return;
+        destIRmi.answerPairInvite(inviter, answer);
+        if (answer) {
+            try {
+                List<IClientRmi> clients = new ArrayList<>();
+                try {
+                    PairDatabase pair = dataBase.getPairAtual(validationUser.getUsername());
+                    IClientRmi cli = userList.get(pair.getPlayerDatabases(0).getUser());
+                    if (cli != null) clients.add(cli);
+                    cli = userList.get(pair.getPlayerDatabases(1).getUser());
+                    if (cli != null) clients.add(cli);
+                } catch (PairAtualNotFoundException ignore) {
+                    clients.add(sourceIRmi);
+                }
+
+                try {
+                    PairDatabase pair = dataBase.getPairAtual(inviter.username);
+                    IClientRmi cli = userList.get(pair.getPlayerDatabases(0).getUser());
+                    if (cli != null) clients.add(cli);
+                    cli = userList.get(pair.getPlayerDatabases(1).getUser());
+                    if (cli != null) clients.add(cli);
+                } catch (PairAtualNotFoundException ignore) {
+                    clients.add(destIRmi);
+                }
+
+                dataBase.createpair(validationUser.getUsername(), inviter.username);
+                dataBase.setPairAtual(validationUser.getUsername(), inviter.username);
+
+                for (IClientRmi client : clients) {
+                    client.refreshStatus();
+                }
+            } catch (UserNotFoundException | InvalidPairException | PairNotFoundException e) {
+                System.out.println("<AnswerPairInvite> " + e.getMessage());
+            }
+        }
 
     }
 
+    @Override
+    public void endPair(ValidationUser validationUser) throws RemoteException, AccessDeniedException {
+        if (!isValidUser(validationUser))
+            throw new AccessDeniedException();
+
+        try {
+            PairDatabase pair = dataBase.getPairAtual(validationUser.getUsername());
+            dataBase.removePairAtual(validationUser.getUsername());
+            refreshClientPairs(pair);
+        } catch (UserNotFoundException | PairAtualNotFoundException ignore) {
+        }
+    }
+
+    @Override
+    public Pair getMyPair(ValidationUser validationUser) throws RemoteException, AccessDeniedException {
+        if (!isValidUser(validationUser))
+            throw new AccessDeniedException();
+
+        try {
+            PairDatabase pair = dataBase.getPairAtual(validationUser.getUsername());
+
+            PlayerDatabase player0 = pair.getPlayerDatabases(0);
+            PlayerDatabase player1 = pair.getPlayerDatabases(1);
+            return new Pair(new User(player0.getName(), player0.getUser()), new User(player1.getName(), player1.getUser()));
+        } catch (UserNotFoundException | PairAtualNotFoundException ignore) {
+        }
+        return null;
+    }
+
+    @Override
+    public Status getStatus(ValidationUser validationUser) throws RemoteException, AccessDeniedException {
+        if (!isValidUser(validationUser))
+            throw new AccessDeniedException();
+        return getStatus(validationUser.getUsername());
+    }
+
+    @Override
+    public Status getStatus(String username, ValidationUser validationUser) throws RemoteException, AccessDeniedException {
+        if (!isValidUser(validationUser))
+            throw new AccessDeniedException();
+        return getStatus(username);
+    }
+
+    private Status getStatus(String username) throws RemoteException, AccessDeniedException {
+        try {
+            PlayerDatabase player = dataBase.getPlayer(username);
+
+            Status status = new Status(new User(player.getName(), player.getUser()), player.getWins(), player.getDefeats());
+            return status;
+        } catch (UserNotFoundException ignore) { //Para chegar aqui tem de passar pela validaçao do user
+        }
+        return null;
+    }
+
     private boolean isValidUser(ValidationUser validation) throws RemoteException {
-        IClientRmi client = userList.get(validation.getUser());
+        IClientRmi client = userList.get(validation.getUsername());
         if (client == null || client.getCode() != validation.getCode())
             return false;
         else return true;
@@ -201,12 +300,62 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
                             usersOffline.add(key);
                         }
                     });
-                    usersOffline.forEach(s -> {
-                        userList.remove(s);
-                        dataBase.logout(s);
-                    });
+                    usersOffline.forEach(s -> logoutUser(s));
                 }
             }
         }).start();
+    }
+
+    private void logoutUser(String username) {
+        userList.remove(username);
+        IClientRmi cli = null;
+        String otherUsername = "";
+        try {
+            PairDatabase pair = dataBase.getPairAtual(username);
+            if (username.compareTo(pair.getPlayerDatabases(0).getUser()) == 0) {
+                cli = userList.get(otherUsername = pair.getPlayerDatabases(1).getUser());
+            } else {
+                cli = userList.get(otherUsername = pair.getPlayerDatabases(0).getUser());
+            }
+            dataBase.removePairAtual(username);
+        } catch (UserNotFoundException | PairAtualNotFoundException ignored) {
+        } finally {
+
+            dataBase.logout(username);
+            if (cli != null) {
+                try {
+                    cli.refreshStatus();
+                } catch (RemoteException e) {
+                    userList.remove(otherUsername);
+                }
+            }
+        }
+
+        System.out.println("A fazer logout do user " + username);
+        refreshClientLoginList();
+    }
+
+    private void refreshClientPairs(PairDatabase pair) {
+        try {
+            refreshClientStatus(pair.getPlayerDatabases(0).getUser(), pair.getPlayerDatabases(1).getUser());
+        } catch (UserNotFoundException ignore) {
+        }
+    }
+
+    private void refreshClientStatus(String user0, String user1) {
+        refreshClientStatus(user0);
+        refreshClientStatus(user1);
+
+    }
+
+    private void refreshClientStatus(String user) {
+        IClientRmi client = userList.get(user);
+        if (client != null) {
+            try {
+                client.refreshStatus();
+            } catch (RemoteException e) {
+                userList.remove(user);
+            }
+        }
     }
 }

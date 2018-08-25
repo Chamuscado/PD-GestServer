@@ -1,8 +1,8 @@
 import DataBaseIO.DataBaseIO;
+import DataBaseIO.Exceptions.UserNotFoundException;
 import GestServerRmi.GestServerRmi;
 import HeartBeats.HeartBeatsGest;
 
-import java.io.IOException;
 import java.net.Inet4Address;
 import java.net.UnknownHostException;
 import java.util.Scanner;
@@ -24,9 +24,9 @@ public class GestServer {
         }
 
         dataBase = new DataBaseIO(dataBaseName, dataBaseUser, dataBasePass, dataBaseIP);
-
+        DataBaseIO.DEBUG = true;
         dataBase.connect();
-
+        dataBase.logoutall();
         HeartBeatsGest.startHeartBeatsGest("localhost", "RemoteT", dataBaseIP + ":" + dataBasePorto);
         GestServerRmi.startGestServerRmi("localhost", dataBase);
 
@@ -39,6 +39,27 @@ public class GestServer {
         GestServerRmi.stop();
         HeartBeatsGest.stop();
 
+        dataBase.logoutall();
+        dataBase.close();
+    }
+
+    static public void mainT(String[] args) {//databaseTest
+        try {
+            System.out.println(Inet4Address.getLocalHost().getHostAddress());
+        } catch (UnknownHostException e) {
+            e.printStackTrace();
+        }
+
+        dataBase = new DataBaseIO(dataBaseName, dataBaseUser, dataBasePass, dataBaseIP);
+
+        dataBase.connect();
+        DataBaseIO.DEBUG = true;
+        try {
+            dataBase.removePairAtual("Joao");
+        } catch (UserNotFoundException e) {
+            e.printStackTrace();
+        }
+        dataBase.refreshAllPlayersWinsAndDefeats();
         dataBase.logoutall();
         dataBase.close();
     }
