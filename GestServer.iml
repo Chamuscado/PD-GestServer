@@ -9,6 +9,7 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="DataBaseIO" level="project" />
     <orderEntry type="library" name="mysql-connector-java-8.0.12" level="project" />
-    <orderEntry type="library" name="PD_lib" level="project" />
+    <orderEntry type="library" name="GestLib" level="project" />
+    <orderEntry type="library" name="HeartBeats" level="project" />
   </component>
 </module>

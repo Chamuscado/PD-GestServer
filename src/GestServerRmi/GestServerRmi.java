@@ -7,8 +7,10 @@ import DataBaseIO.Exceptions.*;
 import Elements.*;
 import Exceptions.AccessDeniedException;
 import Exceptions.UserAlreadyLoggedException;
+import HeartBeats.HeartBeatsGest;
 import Interfaces.IClientRmi;
 import Interfaces.IGestServerRmi;
+import org.omg.CORBA.IRObject;
 
 import java.io.Serializable;
 import java.rmi.Naming;
@@ -30,9 +32,9 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
     private static GestServerRmi server = null;
     private static DataBaseIO dataBase = null;
     private final HashMap<String, IClientRmi> userList = new HashMap<>();
+    private HeartBeatsGest heartBeatsGest;
 
-
-    static public void startGestServerRmi(String regist, DataBaseIO database) {
+    static public void startGestServerRmi(HeartBeatsGest heartBeatsGest, String regist, DataBaseIO database) {
         dataBase = database;
         String registration = null;
 
@@ -51,7 +53,7 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
             server = new GestServerRmi();
             registration = "rmi://" + regist + "/" + IGestServerRmi.ServiceName;
             Naming.rebind(registration, server);
-
+            server.heartBeatsGest = heartBeatsGest;
         } catch (RemoteException e) {
             System.err.println("Remote Error (" + IGestServerRmi.ServiceName + ")- " + e);
             registry = null;
@@ -269,9 +271,22 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
         return getStatus(username);
     }
 
+    @Override
+    public String getGameServerIp(ValidationUser validationUser) throws RemoteException, AccessDeniedException {
+        if (isValidUser(validationUser))
+            return heartBeatsGest.getGameServerIp();
+        else
+            throw new AccessDeniedException();
+    }
+
+
     private Status getStatus(String username) throws RemoteException, AccessDeniedException {
         try {
             PlayerDatabase player = dataBase.getPlayer(username);
+
+            IClientRmi client = userList.get(username);
+            if (client != null)
+                client.setReadyToPlay(player.getIdPar() != PairDatabase.INVALIDID);
 
             Status status = new Status(new User(player.getName(), player.getUser()), player.getWins(), player.getDefeats());
             return status;

@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="GestLib">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/../PD_Lib/Jar/GestLib.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

@@ -1,7 +1,7 @@
 <component name="libraryTable">
-  <library name="PD_lib">
+  <library name="HeartBeats">
     <CLASSES>
-      <root url="jar://$PROJECT_DIR$/../PD_Lib/Jar/PD_lib.jar!/" />
+      <root url="jar://$PROJECT_DIR$/../HeartBeats/Jar/HeartBeats.jar!/" />
     </CLASSES>
     <JAVADOC />
     <SOURCES />

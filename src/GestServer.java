@@ -24,11 +24,13 @@ public class GestServer {
         }
 
         dataBase = new DataBaseIO(dataBaseName, dataBaseUser, dataBasePass, dataBaseIP);
-        DataBaseIO.DEBUG = true;
+      //  DataBaseIO.DEBUG = true;
         dataBase.connect();
         dataBase.logoutall();
-        HeartBeatsGest.startHeartBeatsGest("localhost", "RemoteT", dataBaseIP + ":" + dataBasePorto);
-        GestServerRmi.startGestServerRmi("localhost", dataBase);
+        HeartBeatsGest heartBeatsGest = HeartBeatsGest.startHeartBeatsGest("localhost", dataBaseIP + ":" + dataBasePorto);
+        GestServerRmi.startGestServerRmi(heartBeatsGest, "localhost", dataBase);
+
+      //  heartBeatsGest.DEBUG = true;
 
         Scanner in = new Scanner(System.in);
         String cmd;
