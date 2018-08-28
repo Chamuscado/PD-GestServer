@@ -155,7 +155,7 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
         List<PlayerDatabase> list = dataBase.getPlayersLogados();
         List<User> userList = new ArrayList<>(list.size());
         for (PlayerDatabase player : list) {
-            if (validation.getUsername().compareTo(player.getName()) != 0)
+            if (validation.getUsername().compareTo(player.getUser()) != 0)
                 userList.add(new User(player.getName(), player.getUser(), "", player.getIdPar() != PairDatabase.INVALIDID));
         }
         return userList;
