@@ -8,11 +8,12 @@ import Elements.*;
 import Exceptions.AccessDeniedException;
 import Exceptions.UserAlreadyLoggedException;
 import HeartBeats.HeartBeatsGest;
+import HeartBeats.IHeartBeatsGestParent;
 import Interfaces.IClientRmi;
 import Interfaces.IGestServerRmi;
-import org.omg.CORBA.IRObject;
 
 import java.io.Serializable;
+import java.rmi.AccessException;
 import java.rmi.Naming;
 import java.rmi.NotBoundException;
 import java.rmi.RemoteException;
@@ -24,15 +25,19 @@ import java.rmi.server.ServerNotActiveException;
 import java.rmi.server.UnicastRemoteObject;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.util.List;
 
-public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi, Serializable {
+public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi, Serializable, IHeartBeatsGestParent {
 
+    private static final int MaxMsg = 20;
     private static Registry registry = null;
     private static GestServerRmi server = null;
     private static DataBaseIO dataBase = null;
     private final HashMap<String, IClientRmi> userList = new HashMap<>();
+    private final HashMap<MessagePair, LinkedList<Message>> messages = new HashMap<MessagePair, LinkedList<Message>>();
     private HeartBeatsGest heartBeatsGest;
+    private String gameServerIP;
 
     static public void startGestServerRmi(HeartBeatsGest heartBeatsGest, String regist, DataBaseIO database) {
         dataBase = database;
@@ -54,6 +59,7 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
             registration = "rmi://" + regist + "/" + IGestServerRmi.ServiceName;
             Naming.rebind(registration, server);
             server.heartBeatsGest = heartBeatsGest;
+            heartBeatsGest.setParent(server);
         } catch (RemoteException e) {
             System.err.println("Remote Error (" + IGestServerRmi.ServiceName + ")- " + e);
             registry = null;
@@ -150,23 +156,58 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
 
     @Override
     public List<User> getLoginUsers(ValidationUser validation) throws RemoteException, AccessDeniedException {
+        System.out.println("<getLoginUsers> " + validation.getUsername());
         if (!isValidUser(validation))
             throw new AccessDeniedException();
         List<PlayerDatabase> list = dataBase.getPlayersLogados();
         List<User> userList = new ArrayList<>(list.size());
         for (PlayerDatabase player : list) {
-            if (validation.getUsername().compareTo(player.getUser()) != 0)
+            System.out.print(player);
+            if (validation.getUsername().compareTo(player.getUser()) != 0) {
+                // System.out.println(" -> adicionado");
                 userList.add(new User(player.getName(), player.getUser(), "", player.getIdPar() != PairDatabase.INVALIDID));
+            } //else System.out.println(" -> não adicionado");
         }
         return userList;
     }
 
     @Override
     public boolean sendMensage(Message message, ValidationUser validation) throws RemoteException, AccessDeniedException {
-        IClientRmi destIRmi = userList.get(message.getDest());
-        if (!isValidUser(validation) || destIRmi == null)
+        if (!isValidUser(validation))
             throw new AccessDeniedException();
-        destIRmi.sendMensage(message);
+
+        System.out.println("sendMensage: " + message);
+
+        MessagePair pair;
+        if (message.getDest().equals(IClientRmi.ForAll) || message.getSource().equals(IClientRmi.ForAll))
+            pair = new MessagePair(IClientRmi.ForAll, IClientRmi.ForAll);
+        else
+            pair = new MessagePair(message.getDest(), message.getSource());
+        LinkedList<Message> messages = this.messages.get(pair);
+        if (messages != null) {
+            messages.add(message);
+            while (messages.size() > MaxMsg)
+                messages.removeFirst();
+        } else {
+            messages = new LinkedList<>();
+            messages.add(message);
+            this.messages.put(pair, messages);
+        }
+
+        if (pair.contains(IClientRmi.ForAll)) {
+            userList.forEach((s, client) -> {
+                try {
+                    client.refreshMessagesFor(IClientRmi.ForAll);
+                } catch (RemoteException e) {
+                    e.printStackTrace();
+                }
+            });
+            return true;
+        }
+        IClientRmi destIRmi = userList.get(message.getDest());
+        destIRmi.refreshMessagesFor(message.getSource());
+        destIRmi = userList.get(message.getSource());
+        destIRmi.refreshMessagesFor(message.getDest());
         return true;
     }
 
@@ -274,9 +315,22 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
     @Override
     public String getGameServerIp(ValidationUser validationUser) throws RemoteException, AccessDeniedException {
         if (isValidUser(validationUser))
-            return heartBeatsGest.getGameServerIp();
+            return gameServerIP;
         else
             throw new AccessDeniedException();
+    }
+
+    @Override
+    public List<Message> getMessages(MessagePair messagePair, ValidationUser validationUser) throws RemoteException, AccessDeniedException {
+        if (!isValidUser(validationUser))
+            throw new AccessDeniedException();
+        System.out.println("Pedido de mensagens para: " + messagePair);
+        List<Message> list = this.messages.get(messagePair);
+        if (list != null)
+            for (Message msg : list) {
+                System.out.println(msg);
+            }
+        return list;
     }
 
 
@@ -372,5 +426,17 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
                 userList.remove(user);
             }
         }
+    }
+
+    @Override
+    public void GameServerDisconect() {
+        gameServerIP = null;
+        System.out.println("Servidor de Jogo Desconectado");
+    }
+
+    @Override
+    public void setGameServerIp(String gameServerIP) {
+        this.gameServerIP = gameServerIP;
+        System.out.println("Servidor de Jogo Conectado -> " + gameServerIP);
     }
 }
