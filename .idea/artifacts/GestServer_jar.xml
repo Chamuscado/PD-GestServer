@@ -1,0 +1,12 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="GestServer:jar">
+    <output-path>$PROJECT_DIR$/../Jars</output-path>
+    <root id="archive" name="GestServer.jar">
+      <element id="module-output" name="GestServer" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/../PD_Lib/Jar/GestLib.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/../HeartBeats/Jar/HeartBeats.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/../DataBaseIO/Jar/DataBaseIO.jar" path-in-jar="/" />
+      <element id="extracted-dir" path="$PROJECT_DIR$/../mysql-connector-java-8.0.12.jar" path-in-jar="/" />
+    </root>
+  </artifact>
+</component>

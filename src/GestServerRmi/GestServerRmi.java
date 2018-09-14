@@ -1,6 +1,7 @@
 package GestServerRmi;
 
 import DataBaseIO.DataBaseIO;
+import DataBaseIO.Elements.GameDatabase;
 import DataBaseIO.Elements.PairDatabase;
 import DataBaseIO.Elements.PlayerDatabase;
 import DataBaseIO.Exceptions.*;
@@ -35,7 +36,7 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
     private static GestServerRmi server = null;
     private static DataBaseIO dataBase = null;
     private final HashMap<String, IClientRmi> userList = new HashMap<>();
-    private final HashMap<MessagePair, LinkedList<Message>> messages = new HashMap<MessagePair, LinkedList<Message>>();
+    private final HashMap<MessagePair, LinkedList<Message>> messages = new HashMap<>();
     private HeartBeatsGest heartBeatsGest;
     private String gameServerIP;
 
@@ -156,7 +157,6 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
 
     @Override
     public List<User> getLoginUsers(ValidationUser validation) throws RemoteException, AccessDeniedException {
-        System.out.println("<getLoginUsers> " + validation.getUsername());
         if (!isValidUser(validation))
             throw new AccessDeniedException();
         List<PlayerDatabase> list = dataBase.getPlayersLogados();
@@ -175,8 +175,6 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
     public boolean sendMensage(Message message, ValidationUser validation) throws RemoteException, AccessDeniedException {
         if (!isValidUser(validation))
             throw new AccessDeniedException();
-
-        System.out.println("sendMensage: " + message);
 
         MessagePair pair;
         if (message.getDest().equals(IClientRmi.ForAll) || message.getSource().equals(IClientRmi.ForAll))
@@ -324,13 +322,43 @@ public class GestServerRmi extends UnicastRemoteObject implements IGestServerRmi
     public List<Message> getMessages(MessagePair messagePair, ValidationUser validationUser) throws RemoteException, AccessDeniedException {
         if (!isValidUser(validationUser))
             throw new AccessDeniedException();
-        System.out.println("Pedido de mensagens para: " + messagePair);
         List<Message> list = this.messages.get(messagePair);
-        if (list != null)
-            for (Message msg : list) {
-                System.out.println(msg);
-            }
         return list;
+    }
+
+    @Override
+    public List<Game> getHistGames(ValidationUser validationUser) throws RemoteException, AccessDeniedException {
+        if (!isValidUser(validationUser))
+            throw new AccessDeniedException();
+        try {
+            List<PairDatabase> pairs = dataBase.getAllPlayerPairs(validationUser.getUsername());
+            List<GameDatabase> games = new ArrayList<>();
+            for (PairDatabase pair : pairs) {
+                games.addAll(dataBase.getAllPairGame(pair));
+            }
+            List<Game> gamesToSend = new ArrayList<>(games.size());
+
+            for (GameDatabase game : games) {
+                gamesToSend.add(gameDatabaseToGameElement(game));
+            }
+            return gamesToSend;
+        } catch (UserNotFoundException e) {
+            e.printStackTrace();
+        } catch (PairNotFoundException e) {
+            e.printStackTrace();
+        }
+        return new ArrayList<>();
+    }
+
+    private Game gameDatabaseToGameElement(GameDatabase game) throws UserNotFoundException {
+        Game newGame = new Game();
+        PlayerDatabase player = game.getPar().getPlayerDatabases(0);
+        newGame.players[0] = new User(player.getName(), player.getUser());
+        player = game.getPar().getPlayerDatabases(1);
+        newGame.players[1] = new User(player.getName(), player.getUser());
+        if (game.getVencedor() != null)
+            newGame.winner = new User(game.getVencedor().getName(), game.getVencedor().getUser());
+        return newGame;
     }
 
 
